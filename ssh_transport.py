@@ -83,7 +83,12 @@ class ssh_transport(Transport):
     def _launchCmd(self, command, job):
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(job['nodename']) 
+
+        if job['username'] != None: 
+            ssh.connect(job['nodename'],username=job['username'])
+        else:
+            ssh.connect(job['nodename'])
+
         self.logger.info("SSH connection established to %s",job['nodename'])
 
         
