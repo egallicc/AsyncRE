@@ -62,8 +62,15 @@ class impact_job(async_re):
 
             job_input_files = []
             job_input_files.append(input_file)
+
             if rstfile_p:
                 job_input_files.append(rstfile_p)
+
+            if self.keywords.get('RE_TYPE') == 'BEDAMTEMPT':
+                dmsfile_rcpt_p = "%s_rcpt_%d.dms" % (self.basename,cycle-1)
+                dmsfile_lig_p  =  "%s_lig_%d.dms" % (self.basename,cycle-1)            
+                job_input_files.append(dmsfile_rcpt_p)
+                job_input_files.append(dmsfile_lig_p)
             for filename in self.extfiles:
                 job_input_files.append(filename)
 
