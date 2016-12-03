@@ -80,6 +80,68 @@ class ssh_transport(Transport):
         random.shuffle(available)
         return available[0]
 
+    #utility to repeat a scp put command
+    def _RepeatSCPput(self, transport, local_file, remote_file, num_tries = 10, sleep_time = 10):
+        ntries = 0
+        #self.logger.info("scp %s %s", local_file, remote_file) #can print out here to check the scp
+        while True:
+            #retry a number of times
+            if ntries < num_tries: 
+                try:
+                    transport.put(local_file, remote_file)
+                except:
+                    self.logger.info("Warning: unable to transfer file %s. Retrying ..." % local_file)
+                    time.sleep(sleep_time) #waits few seconds and try again
+                    ntries += 1
+                    continue
+                else:
+                    #success
+                    break
+            else:
+                #retry one last time, letting it fail in case
+                transport.put(local_file,remote_file)
+                break
+
+    #utility to repeat a scp get command
+    def _RepeatSCPget(self, transport, remote_file, local_file, num_tries = 10, sleep_time = 10):
+        ntries = 0
+        #self.logger.info("scp %s %s", remote_file, local_file) #can print out here to check the scp
+        while True:
+            #retry a number of times
+            if ntries < num_tries: 
+                try:
+                    transport.get(remote_file,local_file)
+                except:
+                    self.logger.info("Warning: unable to copy back file %s. Retrying ..." % local_file)
+                    time.sleep(sleep_time) #waits few seconds and try again
+                    ntries += 1
+                    continue
+                else:
+                    #success
+                    break
+            else:
+                #retry one last time, letting it fail in case
+                transport.get(remote_file, local_file)
+                break
+
+    def _checkSSHconnection(self, ssh, scpt, job):
+        #try to reopen ssh connection if it has closed
+        try:
+            transport = ssh.get_transport()
+            transport.send_ignore()
+        except:
+            # connection is probably closed, try to reconnect
+            ssh.close()
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            if job['username'] != None: 
+                ssh.connect(job['nodename'],username=job['username'])
+            else:
+                ssh.connect(job['nodename'])
+            scpt = scp.SCPClient(ssh.get_transport())
+            self.logger.info("Restablished SSH connection to %s",job['nodename'])
+        return (ssh,scpt)
+
     def _launchCmd(self, command, job):
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -104,12 +166,13 @@ class ssh_transport(Transport):
             for filename in job["exec_files"]:
                 local_file = filename
                 remote_file = job["remote_working_directory"] + "/"
-                #self.logger.info("scp %s %s", local_file, remote_file) #can print out here to check the scp
-                scpt.put(local_file, remote_file)
+                (ssh,scpt) = self._checkSSHconnection(ssh, scpt, job)
+                self._RepeatSCPput(scpt, local_file, remote_file)
             for filename in job["job_input_files"]:
                 local_file = job["working_directory"] + "/" + filename
                 remote_file = job["remote_working_directory"] + "/" + filename
-                scpt.put(local_file, remote_file)
+                (ssh,scpt) = self._checkSSHconnection(ssh, scpt, job)
+                self._RepeatSCPput(scpt, local_file, remote_file)
 
             chmod_command = "chmod -R 777 %s" % job['remote_working_directory']
             stdin, stdout, stderr = ssh.exec_command(chmod_command)
@@ -125,16 +188,14 @@ class ssh_transport(Transport):
         stdin.close()
         stdout.close()
         stderr.close()
-
         
         if job["remote_working_directory"]:
             for filename in job["job_output_files"]:
                 local_file = job["working_directory"] + "/" + filename
                 remote_file = job["remote_working_directory"] + "/" + filename
-                try:
-                    scpt.get(remote_file, local_file)
-                except:
-                    self.logger.info("Warning: unable to copy back file %s" % local_file)
+                #reopen ssh connection if it has closed
+                (ssh,scpt) = self._checkSSHconnection(ssh, scpt, job)
+                self._RepeatSCPget(scpt, remote_file, local_file, 5, 1)
             rmdir_command = "rm -rf %s" % job['remote_working_directory']
             stdin, stdout, stderr = ssh.exec_command(rmdir_command)
             stdin.close()
@@ -182,7 +243,7 @@ class ssh_transport(Transport):
         #add command to go to remote working directory
         cd_to_command = "cd %s ; " % job["remote_working_directory"]
         
-        mic_pattern = re.compile("mic0" or "mic1")
+        mic_pattern = re.compile(r'p-mic')
 
         if re.search(mic_pattern, nodename):
             offset = slotN * (nodeN/4)  

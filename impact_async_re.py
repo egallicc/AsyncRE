@@ -71,6 +71,10 @@ class impact_job(async_re):
                 dmsfile_lig_p  =  "%s_lig_%d.dms" % (self.basename,cycle-1)            
                 job_input_files.append(dmsfile_rcpt_p)
                 job_input_files.append(dmsfile_lig_p)
+            if self.keywords.get('RE_TYPE') == 'TEMPT':
+                dmsfile = "%s_%d.dms" % (self.basename, cycle-1)
+                job_input_files.append(dmsfile)
+
             for filename in self.extfiles:
                 job_input_files.append(filename)
 
@@ -191,6 +195,40 @@ class impact_job(async_re):
             if self.verbose:
                 self.logger.warning("Unable to read/parse file %s", output_file)
             return False
+
+
+        #check existence of dms files
+        if self.keywords.get('RE_TYPE') == 'TEMPT':
+            dmsfile = "r%d/%s_%d.dms" % (replica, self.basename,cycle)
+            try:
+                if not os.path.exists(dmsfile):
+                    if self.verbose:
+                        self.logger.warning("Cannot find file %s", dmsfile)
+                    return False
+            except:
+                self.logger.error("Error accessing file %s", dmsfile)
+                return False
+
+        if self.keywords.get('RE_TYPE') == 'BEDAMTEMPT':
+            dmsfile_1 = "r%d/%s_rcpt_%d.dms" % (replica, self.basename,cycle)
+            dmsfile_2 = "r%d/%s_lig_%d.dms" % (replica, self.basename,cycle)
+            try:
+                if not os.path.exists(dmsfile_1):
+                    if self.verbose:
+                        self.logger.warning("Cannot find file %s", dmsfile_1)
+                    return False
+            except:
+                self.logger.error("Error accessing file %s", dmsfile_1)
+                return False
+
+            try:
+                if not os.path.exists(dmsfile_2):
+                    if self.verbose:
+                        self.logger.warning("Cannot find file %s", dmsfile_2)
+                    return False
+            except:
+                self.logger.error("Error accessing file %s", dmsfile_2)
+                return False
 
         return True
 

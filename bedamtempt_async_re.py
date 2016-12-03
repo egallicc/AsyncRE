@@ -1,10 +1,14 @@
+import os
+import glob
 import sys
 import time
 import math
 import random
 import logging
+import shutil
 from async_re import async_re
 from bedam_async_re import bedam_async_re_job
+from bedam_randomize import bedam_randomize
 
 class bedamtempt_async_re_job(bedam_async_re_job):
     def _setLogger(self):
@@ -78,10 +82,15 @@ class bedamtempt_async_re_job(bedam_async_re_job):
         ofile.write(tbuffer)
         ofile.close()
 
+        # pick structure from reservoir if lambda=0
+        self.randomize_from_reservoir(replica)
+
         # update the history status file
         ofile = self._openfile("r%d/state.history" % replica, "a")
         ofile.write("%d %d %s %s\n" % (cycle, stateid, lambd, temperature))
         ofile.close()
+
+
 
     def _doExchange_pair(self,repl_a,repl_b):
         """
@@ -202,6 +211,57 @@ class bedamtempt_async_re_job(bedam_async_re_job):
         e0 = pot[0]
         u = pot[1]
         return beta*(e0 + lmb*u)
+
+    def randomize_from_reservoir(self, repl):
+        # this is used to randomize ligand/receptor conformations
+        # at lambda = 0
+
+        reservoir_directory_rcpt = self.keywords.get('RESERVOIR_DIR_RCPT')
+        if not reservoir_directory_rcpt:  #silently return if reservoir is not defined
+            return
+        if not self.keywords.get('RESERVOIR_DIR_LIG'):
+            self._exit("randomize_ligand_dms(): RESERVOIR_DIR_LIG needs to be specified")
+        reservoir_directory_lig = self.keywords.get('RESERVOIR_DIR_LIG')
+
+        sid = self.status[repl]['stateid_current']
+        lmb = float(self.stateparams[sid]['lambda'])
+        if lmb > 0: #reservoir only at lambda = 0
+            return
+
+        # radius of binding site sphere
+        if not self.keywords.get('REST_LIGAND_CMTOL'):
+            self._exit("randomize_ligand_dms(): REST_LIGAND_CMTOL needs to be specified")
+        radius = float(self.keywords.get('REST_LIGAND_CMTOL'))
+
+        # set of receptor site atoms, define receptor CM
+        receptor_sql =  self.keywords.get('REST_LIGAND_CMRECSQL')
+        if not receptor_sql:
+            msg = "randomize_ligand_dms(): No sql selection specified for receptor site center"
+            self._exit(msg)
+
+        # set of ligand atoms defining the ligand CM
+        ligand_sql =  self.keywords.get('REST_LIGAND_CMLIGSQL')
+        if not ligand_sql:
+            ligand_sql = '( all)'
+
+        rcptdms_res = self._pick_struct_from_reservoir(reservoir_directory_rcpt)
+        ligdms_res  = self._pick_struct_from_reservoir(reservoir_directory_lig)
+        if not rcptdms_res or not ligdms_res:
+            msg = "randomize_from_reservoir(): error in retrieving structures from reservoir %s" % reservoir_directory
+            self.exit(msg)
+        cycle = self.status[repl]['cycle_current']
+        rcptdms = "r%d/%s_rcpt_%d.dms" % (repl,self.basename,cycle-1)
+        ligdms = "r%d/%s_lig_%d.dms" % (repl,self.basename,cycle-1)
+        shutil.copyfile(rcptdms_res, rcptdms)
+        shutil.copyfile(ligdms_res, ligdms)
+
+        br = bedam_randomize()
+        print "Randomizing %s %s" % (rcptdms, ligdms)
+        br.randomize_ligand_dms(rcptdms, ligdms, receptor_sql, ligand_sql, radius)
+        
+    def _pick_struct_from_reservoir(self, reservoir_directory):
+        filelist = glob.glob(reservoir_directory + "/*.dms")
+        return random.choice(filelist)
 
 if __name__ == '__main__':
 
