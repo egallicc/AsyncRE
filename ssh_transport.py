@@ -246,8 +246,9 @@ class ssh_transport(Transport):
         mic_pattern = re.compile(r'p-mic')
 
         if re.search(mic_pattern, nodename):
-            offset = slotN * (nodeN/4)  
-            add_to_command = "export KMP_PLACE_THREADS=6C,4T,%dO ; " % offset
+            ncores = nodeN/4
+            offset = slotN * ncores
+            add_to_command = "export KMP_PLACE_THREADS=%dC,4T,%dO ; " % (ncores,offset)
         else:
             add_to_command = "export OMP_NUM_THREADS=%d;"% nodeN
         new_command = add_to_command + cd_to_command + command
