@@ -10,7 +10,8 @@ import paramiko
 import multiprocessing as mp
 import logging
 import Queue
-import scp
+import subprocess
+#import scp
 
 from transport import Transport # WFF - 2/18/15
 
@@ -162,17 +163,17 @@ class ssh_transport(Transport):
             stdin.close()
             stdout.close()
             stderr.close()
-            scpt = scp.SCPClient(ssh.get_transport())
+
+
+            send_files_command = "scp "
             for filename in job["exec_files"]:
-                local_file = filename
-                remote_file = job["remote_working_directory"] + "/"
-                (ssh,scpt) = self._checkSSHconnection(ssh, scpt, job)
-                self._RepeatSCPput(scpt, local_file, remote_file)
+                send_files_command += filename + " "
             for filename in job["job_input_files"]:
-                local_file = job["working_directory"] + "/" + filename
-                remote_file = job["remote_working_directory"] + "/" + filename
-                (ssh,scpt) = self._checkSSHconnection(ssh, scpt, job)
-                self._RepeatSCPput(scpt, local_file, remote_file)
+                send_files_command += job["working_directory"] + "/" + filename + " "
+            if job['username'] != None:
+                send_files_command += job['username'] + "@"
+            send_files_command += job['nodename'] + ":" + job["remote_working_directory"] + "/"
+            subprocess.call(send_files_command + " > /dev/null 2>&1 ", shell=True)
 
             chmod_command = "chmod -R 777 %s" % job['remote_working_directory']
             stdin, stdout, stderr = ssh.exec_command(chmod_command)
@@ -190,12 +191,20 @@ class ssh_transport(Transport):
         stderr.close()
         
         if job["remote_working_directory"]:
-            for filename in job["job_output_files"]:
-                local_file = job["working_directory"] + "/" + filename
-                remote_file = job["remote_working_directory"] + "/" + filename
-                #reopen ssh connection if it has closed
-                (ssh,scpt) = self._checkSSHconnection(ssh, scpt, job)
-                self._RepeatSCPget(scpt, remote_file, local_file, 5, 1)
+            get_files_command = "scp "
+            if job['username'] != None:
+                get_files_command += job['username'] + "@"
+            get_files_command += job['nodename'] + ":" + job["remote_working_directory"] + "/"
+            files = "{"
+            for n in range(0,len(job["job_output_files"])):
+                filename = job["job_output_files"][n]
+                if n == 0:
+                    files += filename
+                else:
+                    files += "," + filename
+            files += "}"
+            get_files_command += files + " " + job["working_directory"] + "/"
+            subprocess.call(get_files_command + " > /dev/null 2>&1 ", shell=True)
             rmdir_command = "rm -rf %s" % job['remote_working_directory']
             stdin, stdout, stderr = ssh.exec_command(rmdir_command)
             stdin.close()
