@@ -145,7 +145,7 @@ class async_re(object):
         if self.transport_mechanism is None:
             self._exit('JOB_TRANSPORT needs to be specified')
         #only SSH and BOINC are supported for now
-        if self.transport_mechanism != "SSH" and self.transport_mechanism != "BOINC":
+        if self.transport_mechanism != "SSH" and self.transport_mechanism != "BOINC" and self.transport_mechanism != "CONDOR":
             self._exit("unknown JOB_TRANSPORT %s" % self.transport_mechanism)
         # reset job transport
         self.transport = None
@@ -307,6 +307,12 @@ class async_re(object):
 
             # creates BOINC transport
             self.transport = boinc_transport(self.basename, self.keywords, self.nreplicas, self.extfiles)
+
+        elif self.transport_mechanism == "CONDOR":
+            # creates a CONDOR transport
+            from condor_transport import condor_transport
+            self.transport = condor_transport(self.basename, self.nreplicas)
+
         else:
             self._exit("Job transport is not specified.")
 
@@ -349,6 +355,9 @@ class async_re(object):
             self.updateStatus(restart=True)
             if self.transport_mechanism == "BOINC":
                 # restart BOINC workunit id list
+                self.transport.restart()
+            if self.transport_mechanism == "CONDOR":
+                # restart CONDOR jobid list
                 self.transport.restart()
 
         self.print_status()
