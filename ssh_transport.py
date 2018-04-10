@@ -11,36 +11,38 @@ import multiprocessing as mp
 import logging
 import Queue
 import subprocess
-#import scp
+# import scp
 
-from transport import Transport # WFF - 2/18/15
+from transport import Transport  # WFF - 2/18/15
+
 
 class ssh_transport(Transport):
     """
     Class to launch and monitor jobs on a set of nodes via ssh (paramiko)
     """
-    def __init__(self, jobname, compute_nodes, replicas): #changed on 12/1/14
+
+    def __init__(self, jobname, compute_nodes, replicas):  # changed on 12/1/14
         # jobname: identifies current asyncRE job
         # compute_nodes: list of names of nodes in the pool
         # nreplicas: number of replicas, 0 ... nreplicas-1
-        Transport.__init__(self) #WFF - 2/18/15
-        self.logger = logging.getLogger("async_re.ssh_transport") #WFF - 3/2/15
+        Transport.__init__(self)  # WFF - 2/18/15
+        self.logger = logging.getLogger("async_re.ssh_transport")  # WFF - 3/2/15
 
         # names of compute nodes (slots)
-        self.compute_nodes = compute_nodes #changed on 12/1/14
+        self.compute_nodes = compute_nodes  # changed on 12/1/14
         self.nprocs = len(self.compute_nodes)
-                        
+
         # node status = None if idle
         # Otherwise a structure containing:
         #    replica number being executed
         #    process id
         #    process name
         #    ...
-        self.node_status = [ None for k in range(self.nprocs)]
+        self.node_status = [None for k in range(self.nprocs)]
 
         # contains the nodeid of the node running a replica
         # None = no information about where the replica is running
-        self.replica_to_job = [ None for k in replicas ]
+        self.replica_to_job = [None for k in replicas]
 
         # implements a queue of jobs from which to draw the next job
         # to launch
@@ -53,7 +55,7 @@ class ssh_transport(Transport):
             job = self.replica_to_job[replica]
         except:
             self.logger.warning("clear_resource(): unknown replica id %d",
-                                replcica)
+                                replica)
 
         if job == None:
             return None
@@ -73,7 +75,7 @@ class ssh_transport(Transport):
         return nodeid
 
     def _availableNode(self):
-        #returns a node at random among available nodes
+        # returns a node at random among available nodes
         available = [node for node in range(self.nprocs)
                      if self.node_status[node] == None]
         if available == None or len(available) == 0:
@@ -81,52 +83,52 @@ class ssh_transport(Transport):
         random.shuffle(available)
         return available[0]
 
-    #utility to repeat a scp put command
-    def _RepeatSCPput(self, transport, local_file, remote_file, num_tries = 10, sleep_time = 10):
+    # utility to repeat a scp put command
+    def _RepeatSCPput(self, transport, local_file, remote_file, num_tries=10, sleep_time=10):
         ntries = 0
-        #self.logger.info("scp %s %s", local_file, remote_file) #can print out here to check the scp
+        # self.logger.info("scp %s %s", local_file, remote_file) #can print out here to check the scp
         while True:
-            #retry a number of times
-            if ntries < num_tries: 
+            # retry a number of times
+            if ntries < num_tries:
                 try:
                     transport.put(local_file, remote_file)
                 except:
                     self.logger.info("Warning: unable to transfer file %s. Retrying ..." % local_file)
-                    time.sleep(sleep_time) #waits few seconds and try again
+                    time.sleep(sleep_time)  # waits few seconds and try again
                     ntries += 1
                     continue
                 else:
-                    #success
+                    # success
                     break
             else:
-                #retry one last time, letting it fail in case
-                transport.put(local_file,remote_file)
+                # retry one last time, letting it fail in case
+                transport.put(local_file, remote_file)
                 break
 
-    #utility to repeat a scp get command
-    def _RepeatSCPget(self, transport, remote_file, local_file, num_tries = 10, sleep_time = 10):
+    # utility to repeat a scp get command
+    def _RepeatSCPget(self, transport, remote_file, local_file, num_tries=10, sleep_time=10):
         ntries = 0
-        #self.logger.info("scp %s %s", remote_file, local_file) #can print out here to check the scp
+        # self.logger.info("scp %s %s", remote_file, local_file) #can print out here to check the scp
         while True:
-            #retry a number of times
-            if ntries < num_tries: 
+            # retry a number of times
+            if ntries < num_tries:
                 try:
-                    transport.get(remote_file,local_file)
+                    transport.get(remote_file, local_file)
                 except:
                     self.logger.info("Warning: unable to copy back file %s. Retrying ..." % local_file)
-                    time.sleep(sleep_time) #waits few seconds and try again
+                    time.sleep(sleep_time)  # waits few seconds and try again
                     ntries += 1
                     continue
                 else:
-                    #success
+                    # success
                     break
             else:
-                #retry one last time, letting it fail in case
+                # retry one last time, letting it fail in case
                 transport.get(remote_file, local_file)
                 break
 
     def _checkSSHconnection(self, ssh, scpt, job):
-        #try to reopen ssh connection if it has closed
+        # try to reopen ssh connection if it has closed
         try:
             transport = ssh.get_transport()
             transport.send_ignore()
@@ -135,26 +137,25 @@ class ssh_transport(Transport):
             ssh.close()
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            if job['username'] != None: 
-                ssh.connect(job['nodename'],username=job['username'])
+            if job['username'] != None:
+                ssh.connect(job['nodename'], username=job['username'])
             else:
                 ssh.connect(job['nodename'])
             scpt = scp.SCPClient(ssh.get_transport())
-            self.logger.info("Restablished SSH connection to %s",job['nodename'])
-        return (ssh,scpt)
+            self.logger.info("Restablished SSH connection to %s", job['nodename'])
+        return (ssh, scpt)
 
     def _launchCmd(self, command, job):
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-        if job['username'] != None: 
-            ssh.connect(job['nodename'],username=job['username'])
+        if job['username'] != None:
+            ssh.connect(job['nodename'], username=job['username'])
         else:
             ssh.connect(job['nodename'])
 
-        self.logger.info("SSH connection established to %s",job['nodename'])
+        self.logger.info("SSH connection established to %s", job['nodename'])
 
-        
         if job["remote_working_directory"]:
             mkdir_command = "mkdir -p %s" % job['remote_working_directory']
             stdin, stdout, stderr = ssh.exec_command(mkdir_command)
@@ -163,7 +164,6 @@ class ssh_transport(Transport):
             stdin.close()
             stdout.close()
             stderr.close()
-
 
             send_files_command = "scp "
             for filename in job["exec_files"]:
@@ -189,14 +189,14 @@ class ssh_transport(Transport):
         stdin.close()
         stdout.close()
         stderr.close()
-        
+
         if job["remote_working_directory"]:
             get_files_command = "scp "
             if job['username'] != None:
                 get_files_command += job['username'] + "@"
             get_files_command += job['nodename'] + ":" + job["remote_working_directory"] + "/"
             files = "{"
-            for n in range(0,len(job["job_output_files"])):
+            for n in range(0, len(job["job_output_files"])):
                 filename = job["job_output_files"][n]
                 if n == 0:
                     files += filename
@@ -224,8 +224,8 @@ class ssh_transport(Transport):
         output_file = job_info["output_file"]
         error_file = job_info["error_file"]
         executable = job_info["executable"]
-        
-        command = "%s %s > %s 2> %s " % ( executable, input_file, output_file, error_file)
+
+        command = "%s %s > %s 2> %s " % (executable, input_file, output_file, error_file)
 
         output_queue = mp.Queue()
         error_queue = mp.Queue()
@@ -243,27 +243,36 @@ class ssh_transport(Transport):
 
         return self.jobqueue.qsize()
 
-    #intel coprocessor setup
-    def ModifyCommand(self,job, command):
+    # intel coprocessor setup
+    def ModifyCommand(self, job, command):
         nodename = job['nodename']
-        nodeN = job['nthreads']
+        nthreads = job['nthreads']
         slotN = job['nslots']
+        arch = job['arch']
 
-        #add command to go to remote working directory
+        # add command to go to remote working directory
         cd_to_command = "cd %s ; " % job["remote_working_directory"]
-        
-        mic_pattern = re.compile(r'p-mic')
 
-        if re.search(mic_pattern, nodename):
-            ncores = nodeN/4
+        mic_pattern_supermic = re.compile(r'-knc')
+        mic_pattern_stampede2 = re.compile(r'-knl')
+
+        if re.search(mic_pattern_supermic, arch):
+            ncores = nthreads / 4
             offset = slotN * ncores
-            add_to_command = "export KMP_PLACE_THREADS=%dC,4T,%dO ; " % (ncores,offset)
+            add_to_command = "export KMP_PLACE_THREADS=%dC,4T,%dO ; " % (ncores, offset)
+            new_command = add_to_command + cd_to_command + command
+        else if re.search(mic_pattern_stampede2, arch):
+            start = slotN * nthreads
+            end = ((slotN + 1)* nthreads) - 1
+            add_to_command = "numactl -C %d-%d " % (start, end)
+            new_command = cd_to_command + add_to_command + command
         else:
-            add_to_command = "export OMP_NUM_THREADS=%d;"% nodeN
-        new_command = add_to_command + cd_to_command + command
-        #self.logger.info(new_command) #can print new_command here to check the command
+            add_to_command = "export OMP_NUM_THREADS=%d;" % nthreads
+            new_command = add_to_command + command
+
+        # self.logger.info(new_command) #can print new_command here to check the command
         return new_command
-    
+
     def ProcessJobQueue(self, mintime, maxtime):
         """
         Launches jobs waiting in the queue.
@@ -284,25 +293,27 @@ class ssh_transport(Transport):
                 # grabs job on top of the queue
                 replica = self.jobqueue.get()
                 job = self.replica_to_job[replica]
-               
+
                 # assign job to available node
                 job['nodeid'] = node
                 job['nodename'] = self.compute_nodes[node]["node_name"]
-                job['nthreads'] = int(self.compute_nodes[node]["threads_number"]) 
-                job['nslots']   = int(self.compute_nodes[node]["slot_number"])    
+                job['nthreads'] = int(self.compute_nodes[node]["threads_number"])
+                job['nslots'] = int(self.compute_nodes[node]["slot_number"])
                 job['username'] = self.compute_nodes[node]["user_name"]
+                job['arch'] = self.compute_nodes[node]["arch"]
                 # get the shell command
                 command = job['command']
-                #retrieve remote working directory of node
-                job["remote_working_directory"] = self.compute_nodes[node]["tmp_folder"] + "/" + job["remote_replica_dir"]
+                # retrieve remote working directory of node
+                job["remote_working_directory"] = self.compute_nodes[node]["tmp_folder"] + "/" + job[
+                    "remote_replica_dir"]
 
-                command=self.ModifyCommand(job,command)
+                command = self.ModifyCommand(job, command)
 
                 if job["remote_working_directory"] and job['job_input_files']:
                     for filename in job['job_input_files']:
                         local_file = job["working_directory"] + "/" + filename
                         remote_file = job["remote_working_directory"] + "/" + filename
-                        #self.logger.info("%s %s", local_file, remote_file) #can print out here to verify files
+                        # self.logger.info("%s %s", local_file, remote_file) #can print out here to verify files
 
                 if self.compute_nodes[node]["arch"]:
                     architecture = self.compute_nodes[node]["arch"]
@@ -311,7 +322,7 @@ class ssh_transport(Transport):
 
                 exec_directory = job["exec_directory"]
                 lib_directory = exec_directory + "/lib/" + architecture
-                bin_directory  = exec_directory + "/bin/" + architecture
+                bin_directory = exec_directory + "/bin/" + architecture
 
                 job["exec_files"] = []
                 for filename in os.listdir(lib_directory):
@@ -338,14 +349,13 @@ class ssh_transport(Transport):
 
             # updates set of free nodes by checking for replicas that have exited
             for repl in range(nreplicas):
-                self.isDone(repl,0)
+                self.isDone(repl, 0)
 
             usetime += mintime
 
         return njobs_launched
 
-
-    def isDone(self,replica,cycle):
+    def isDone(self, replica, cycle):
         """
         Checks if a replica completed a run.
 
