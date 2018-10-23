@@ -182,6 +182,7 @@ class ssh_transport(Transport):
             stdin.close()
             stdout.close()
             stderr.close()
+            
 
         stdin, stdout, stderr = ssh.exec_command(command)
         output = stdout.read()
@@ -226,6 +227,7 @@ class ssh_transport(Transport):
         executable = job_info["executable"]
 
         command = "%s %s > %s 2> %s " % (executable, input_file, output_file, error_file)
+        
 
         output_queue = mp.Queue()
         error_queue = mp.Queue()
@@ -261,14 +263,14 @@ class ssh_transport(Transport):
             offset = slotN * ncores
             add_to_command = "export KMP_PLACE_THREADS=%dC,4T,%dO ; " % (ncores, offset)
             new_command = add_to_command + cd_to_command + command
-        else if re.search(mic_pattern_stampede2, arch):
+        elif re.search(mic_pattern_stampede2, arch):
             start = slotN * nthreads
             end = ((slotN + 1)* nthreads) - 1
             add_to_command = "numactl -C %d-%d " % (start, end)
             new_command = cd_to_command + add_to_command + command
         else:
             add_to_command = "export OMP_NUM_THREADS=%d;" % nthreads
-            new_command = add_to_command + command
+            new_command = cd_to_command + add_to_command + command
 
         # self.logger.info(new_command) #can print new_command here to check the command
         return new_command
