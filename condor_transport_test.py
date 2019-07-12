@@ -6,15 +6,11 @@ import time
 from transport import Transport
 
 
-class condor_transport(Transport):
-    """
-        Class to launch and monitor jobs through a CONDOR project
-    """
 
     def __init__(self, jobname, nreplicas):
-        Transport.__init__(self)
-        self.logger = logging.getLogger("async_re.condor_transport")
+        Transport.__init(self)
 
+        self.logger = logging.getLogger("asyncre.condor_transport")
         self.jobname = jobname
         self.user_name = os.environ['USER']
 
@@ -22,18 +18,17 @@ class condor_transport(Transport):
 
         self.replica_status = dict()
 
+    def setupTemplateCondorSubmit(self):
         """ Template for Condor submit description file """
-        self.condor_submit_file = """+ProjectName = "TG-MCB150001"
+        self.condor_submit_file = """
 Universe                = vanilla
 Executable              = {executable}
-request_cpus            = 1
-Requirements            = OpSys == "LINUX" && Arch == "X86_64" && (RequestCpus <= Target.Cpus)
+Requirements            = 
 Arguments               = {input_file}
 should_transfer_files   = YES
 transfer_input_files    = {job_input_files}
-Log                     = condor.log
-Output                  = {jobname}_{cycle}.log
-Error                   = {jobname}_{cycle}.error
+Log                     = {jobname}.log
+Error                   = {jobname}.error
 Queue
 
 """
@@ -41,13 +36,10 @@ Queue
     def restart(self):
         # read replica job id from a saved stat file
         self.logger.info("Reading from saved status file")
-        status_file = "%s_condor.stat" % self.jobname
+        status_file = "%s_condor_stat" % self.jobname
         try:
-            with open(status_file, 'rb') as f:
-                # unpickle the list
-                self.replica_to_jobid = pickle.load(f)
-                print "Unpickling the list of jobids"
-                print self.replica_to_jobid
+            with open(status_file, 'r') as file:
+                self.replica_to_jobid = pickle.load(file)
                 for jobid in self.replica_to_jobid:
                     if not jobid:
                         continue
@@ -58,48 +50,45 @@ Queue
 
     def save_restart(self):
         # write new job id for replicas to the saved file
-        status_file = "%s_condor.stat" % self.jobname
+        status_file = "%s_condor_stat" % self.jobname
         try:
-            with open(status_file, 'wb') as f:
-                # pickle the list of jobid
-                pickle.dump(self.replica_to_jobid, f)
+            with open(status_file, 'w'):
+                pickle.dump(self.replica_to_jobid, file)
         except:
             None
 
     def launchJob(self, replica, job_info):
 
+        if self.replica_to_jobid[replica] != None:
+            # a job id already exists for this replica
+            cycle = job_info["cycle"]
+            self.isDone(replica,cycle)
+
         input_file = job_info["input_file"]
         executable = job_info["executable"]
         job_input_files = job_info["job_input_files"]
-
-        # convert list of job input files to a string
-        string_input_files = ','.join(str(f) for f in job_input_files)
-
         cycle = job_info["cycle"]
         working_directory = job_info["working_directory"]
 
-        condor_submit_file = self.jobname + '_' + str(cycle) + '_submit'
-
+        condor_submit_file = self.jobname + 'submit'
 
         input = self.condor_submit_file.format(
             executable=executable, input_file=input_file,
-            job_input_files=string_input_files, cycle=str(cycle),
+            job_input_files=job_input_files,
             jobname=self.jobname)
 
-        with open(working_directory + '/' + condor_submit_file, 'w') as submit_file:
+        with open(condor_submit_file, 'w') as submit_file:
             submit_file.write(input)
 
         launch_command = " cd %s ; condor_submit %s" % (working_directory, condor_submit_file)
 
         self.logger.info(launch_command)
-        launch_job = subprocess.Popen(launch_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        launch_job = subprocess.Popen(launch_command, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
 
         (out, err) = launch_job.communicate()
 
         try:
-            # print 'printing job id : %s' % out
-            jobid = out.split()[-1] + '0'
-            print 'job id is printed as : %s' % jobid
+            jobid = int(out.split()[-1]) + '0'
         except:
             self.logger.warning("launchJob():Unable to retrieve JobID")
             return None
@@ -123,46 +112,34 @@ Queue
         self.logger.info("Checking from Condor queue")
 
         initial_jobids = self.replica_status.keys()
-        # convert to a set
-        set_initial_jobids = set(initial_jobids)
-        
         if not initial_jobids:
-            self.logger.info("Cannot find any old job ids")
+            self.logger.info("Cannot find any jobids from Condor queue")
             return
-        # Add in git commit : removed the query for submitter name from condor_q
-        # in OSG, no need to escape the format specifier in the condor_q command
-        query_queue = "condor_q -format \"%d.\" ClusterId -format \"%d\n\" ProcId"
-        # for local, query_queue = "condor_q -format \"%%d.\" ClusterId -format \"%%d\n\" ProcId"
+
+        query_queue = "condor_q  -submitter %s -format \"%%d.\" ClusterId -format \"%%d\n\" ProcId" % self.user_name
         self.logger.info(query_queue)
-        run_condor_q = subprocess.Popen(query_queue, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        run_condor_q = subprocess.Popen(query_queue, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         (out, err) = run_condor_q.communicate()
-        id_list = out.split()
-        print "list of ids from condor_q:"
-        print id_list
-
-        condor_job_ids = set(id_list)
-        
-        # print condor_job_ids
+        condor_job_ids = set(out)
 
         # gets a set of job ids which are not retrieved by Condor and the jobs are assumed to be done.
         # A replica which has never run is assigned a job id None. The following conditional statement and the isDone()
         # method will return that replica as True. Further checking may be needed to streamline the code for suspected
         # bugs
 
-        done_set = set_initial_jobids - condor_job_ids
-        print "jobs which are done are:\n"
-        
-        print done_set
+        done_set = set(initial_jobids) - condor_job_ids
 
         for id in done_set:
             self.replica_status[id] = True
-        print "replicas with status:\n"
-        print self.replica_status
 
         self.logger.info("Polling Condor queue is complete")
 
-    def ProcessJobQueue(self, mintime, maxtime):
+        if not jobids:
+            self.logger.info("Cannot find any jobids from Condor queue")
+            return
+
+    def ProcessJobQueue(self,mintime, maxtime):
         """
         Just wait until maxtime for Condor to complete the job
         """
@@ -184,4 +161,3 @@ Queue
 
 if __name__ == "__main__":
     pass
-

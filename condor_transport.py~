@@ -23,11 +23,9 @@ class condor_transport(Transport):
         self.replica_status = dict()
 
         """ Template for Condor submit description file """
-        self.condor_submit_file = """+ProjectName = "TG-MCB150001"
-Universe                = vanilla
+        self.condor_submit_file = """Universe                = vanilla
 Executable              = {executable}
-request_cpus            = 1
-Requirements            = OpSys == "LINUX" && Arch == "X86_64" && (RequestCpus <= Target.Cpus)
+Requirements            = TARGET.UidDomain == "otranto.brooklyn.cuny.edu"
 Arguments               = {input_file}
 should_transfer_files   = YES
 transfer_input_files    = {job_input_files}
@@ -99,7 +97,7 @@ Queue
         try:
             # print 'printing job id : %s' % out
             jobid = out.split()[-1] + '0'
-            print 'job id is printed as : %s' % jobid
+            # print 'job id is printed as : %s' % jobid
         except:
             self.logger.warning("launchJob():Unable to retrieve JobID")
             return None
@@ -125,24 +123,22 @@ Queue
         initial_jobids = self.replica_status.keys()
         # convert to a set
         set_initial_jobids = set(initial_jobids)
-        
+        # sort the jobids within the set
+        sorted_initial_jobids = sorted(set_initial_jobids)
         if not initial_jobids:
             self.logger.info("Cannot find any old job ids")
             return
-        # Add in git commit : removed the query for submitter name from condor_q
-        # in OSG, no need to escape the format specifier in the condor_q command
-        query_queue = "condor_q -format \"%d.\" ClusterId -format \"%d\n\" ProcId"
-        # for local, query_queue = "condor_q -format \"%%d.\" ClusterId -format \"%%d\n\" ProcId"
+
+        query_queue = "condor_q  -submitter %s -format \"%%d.\" ClusterId -format \"%%d\n\" ProcId" % self.user_name
         self.logger.info(query_queue)
         run_condor_q = subprocess.Popen(query_queue, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
 
         (out, err) = run_condor_q.communicate()
         id_list = out.split()
-        print "list of ids from condor_q:"
-        print id_list
-
+        # print id_list
         condor_job_ids = set(id_list)
-        
+        # sort retrieved ids
+        sorted_condor_job_ids = sorted(condor_job_ids)
         # print condor_job_ids
 
         # gets a set of job ids which are not retrieved by Condor and the jobs are assumed to be done.
@@ -150,9 +146,8 @@ Queue
         # method will return that replica as True. Further checking may be needed to streamline the code for suspected
         # bugs
 
-        done_set = set_initial_jobids - condor_job_ids
+        unsorted_done_set = sorted_initial_jobids - sorted_condor_job_ids
         print "jobs which are done are:\n"
-        
         print done_set
 
         for id in done_set:
@@ -184,4 +179,3 @@ Queue
 
 if __name__ == "__main__":
     pass
-
